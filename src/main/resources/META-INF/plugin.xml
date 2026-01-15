@@ -1,0 +1,37 @@
+<idea-plugin>
+    <id>com.morpheus.debug-bridge</id>
+    <name>Debug Bridge for AI</name>
+    <version>1.0.0</version>
+    <vendor email="support@morpheus.com" url="https://github.com/morpheus">Morpheus</vendor>
+
+    <description>
+    Bridges IntelliJ debugger to AI assistants via REST API on localhost:19999.
+    Allows AI to see debug location, inspect variables, view call stack, and control execution.
+    </description>
+
+    <change-notes>
+    1.0.0 - Initial release with REST API for debug inspection and control.
+    </change-notes>
+
+    <idea-version since-build="241" until-build="243.*"/>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService
+            serviceImplementation="com.morpheus.debugbridge.service.DebugStateService"/>
+
+        <projectService
+            serviceImplementation="com.morpheus.debugbridge.service.ProjectDebugService"/>
+
+        <postStartupActivity
+            implementation="com.morpheus.debugbridge.DebugBridgeStartup"/>
+    </extensions>
+
+    <projectListeners>
+        <listener
+            class="com.morpheus.debugbridge.DebugSessionListener"
+            topic="com.intellij.xdebugger.XDebuggerManagerListener"/>
+    </projectListeners>
+</idea-plugin>
