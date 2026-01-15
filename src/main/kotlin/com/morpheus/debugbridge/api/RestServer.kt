@@ -3,6 +3,7 @@ package com.morpheus.debugbridge.api
 import com.intellij.openapi.diagnostic.Logger
 import com.morpheus.debugbridge.model.*
 import com.morpheus.debugbridge.service.DebugStateService
+import com.morpheus.debugbridge.service.VariableExtractor
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -170,11 +171,8 @@ class RestServer(private val port: Int = 19999) {
     // ========== Implementation stubs (to be filled in feature branches) ==========
 
     private suspend fun getVariables(): VariablesResponse {
-        // TODO: Implement variable extraction from current stack frame
-        return VariablesResponse(
-            locals = emptyList(),
-            thisObject = null
-        )
+        val session = DebugStateService.getInstance().getActiveSession()
+        return VariableExtractor.extractVariables(session)
     }
 
     private suspend fun evaluateExpression(expression: String): EvaluateResponse {

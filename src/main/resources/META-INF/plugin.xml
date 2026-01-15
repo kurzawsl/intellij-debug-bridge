@@ -13,7 +13,7 @@
     1.0.0 - Initial release with REST API for debug inspection and control.
     </change-notes>
 
-    <idea-version since-build="241" until-build="243.*"/>
+    <idea-version since-build="243" until-build="251.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>

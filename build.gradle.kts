@@ -29,7 +29,7 @@ dependencies {
 
 // Configure Gradle IntelliJ Plugin
 intellij {
-    version.set("2024.1")
+    version.set("2024.3")  // Latest stable
     type.set("IC") // IntelliJ IDEA Community Edition
 
     // Required plugins for debugging support
@@ -50,8 +50,8 @@ tasks {
     }
 
     patchPluginXml {
-        sinceBuild.set("241")
-        untilBuild.set("243.*")
+        sinceBuild.set("243")
+        untilBuild.set("251.*")
     }
 
     signPlugin {

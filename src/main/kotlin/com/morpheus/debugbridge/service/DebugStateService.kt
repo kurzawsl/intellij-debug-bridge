@@ -158,12 +158,110 @@ class DebugStateService {
     }
 
     private fun extractMethodName(frame: com.intellij.xdebugger.frame.XStackFrame): String? {
-        // The frame's presentation often contains method info
-        // This is a simplified version; real impl depends on debugger type
-        return null // Will be enhanced in feature implementation
+        try {
+            // For JavaStackFrame, get the descriptor which has method info
+            val frameClass = frame.javaClass
+
+            // Try getDescriptor method (for JavaStackFrame)
+            try {
+                val getDescriptor = frameClass.getMethod("getDescriptor")
+                val descriptor = getDescriptor.invoke(frame)
+                if (descriptor != null) {
+                    val descriptorClass = descriptor.javaClass
+
+                    // Try to get the method name from the descriptor
+                    try {
+                        val getMethod = descriptorClass.getMethod("getMethod")
+                        val method = getMethod.invoke(descriptor)
+                        if (method != null) {
+                            val nameMethod = method.javaClass.getMethod("name")
+                            return nameMethod.invoke(method) as? String
+                        }
+                    } catch (e: Exception) { }
+
+                    // Try getName if getMethod fails
+                    try {
+                        val getName = descriptorClass.getMethod("getName")
+                        return getName.invoke(descriptor) as? String
+                    } catch (e: Exception) { }
+                }
+            } catch (e: Exception) { }
+
+            // Fallback: try to get from equalityObject which often contains location info
+            try {
+                val getEqualityObject = frameClass.getMethod("getEqualityObject")
+                val eqObj = getEqualityObject.invoke(frame)
+                if (eqObj != null) {
+                    // The equality object for JavaStackFrame is usually a Location
+                    val locationClass = eqObj.javaClass
+                    try {
+                        val methodMethod = locationClass.getMethod("method")
+                        val method = methodMethod.invoke(eqObj)
+                        if (method != null) {
+                            val nameMethod = method.javaClass.getMethod("name")
+                            return nameMethod.invoke(method) as? String
+                        }
+                    } catch (e: Exception) { }
+                }
+            } catch (e: Exception) { }
+
+        } catch (e: Exception) {
+            log.debug("extractMethodName failed: ${e.message}")
+        }
+        return null
     }
 
     private fun extractClassName(frame: com.intellij.xdebugger.frame.XStackFrame): String? {
-        return null // Will be enhanced in feature implementation
+        try {
+            val frameClass = frame.javaClass
+
+            // Try getDescriptor method (for JavaStackFrame)
+            try {
+                val getDescriptor = frameClass.getMethod("getDescriptor")
+                val descriptor = getDescriptor.invoke(frame)
+                if (descriptor != null) {
+                    val descriptorClass = descriptor.javaClass
+
+                    // Try to get the declaring type from the method
+                    try {
+                        val getMethod = descriptorClass.getMethod("getMethod")
+                        val method = getMethod.invoke(descriptor)
+                        if (method != null) {
+                            val declaringType = method.javaClass.getMethod("declaringType")
+                            val type = declaringType.invoke(method)
+                            if (type != null) {
+                                val nameMethod = type.javaClass.getMethod("name")
+                                return nameMethod.invoke(type) as? String
+                            }
+                        }
+                    } catch (e: Exception) { }
+                }
+            } catch (e: Exception) { }
+
+            // Fallback: try to get from equalityObject
+            try {
+                val getEqualityObject = frameClass.getMethod("getEqualityObject")
+                val eqObj = getEqualityObject.invoke(frame)
+                if (eqObj != null) {
+                    val locationClass = eqObj.javaClass
+                    try {
+                        val methodMethod = locationClass.getMethod("method")
+                        val method = methodMethod.invoke(eqObj)
+                        if (method != null) {
+                            val declaringType = method.javaClass.getMethod("declaringType")
+                            val type = declaringType.invoke(method)
+                            if (type != null) {
+                                val nameMethod = type.javaClass.getMethod("name")
+                                return nameMethod.invoke(type) as? String
+                            }
+                        }
+                    } catch (e: Exception) { }
+                }
+            } catch (e: Exception) { }
+
+        } catch (e: Exception) {
+            log.debug("extractClassName failed: ${e.message}")
+        }
+        return null
     }
 }
