@@ -365,7 +365,7 @@ object DebugController {
                 return ConfigResponse(true, "Configuration already exists", request.name)
             }
 
-            // Find module
+            // Find module (optional for JS/TS projects)
             val module = if (request.moduleName != null) {
                 ModuleManager.getInstance(project).findModuleByName(request.moduleName)
             } else {
@@ -374,21 +374,45 @@ object DebugController {
                     ?: ModuleManager.getInstance(project).modules.firstOrNull()
             }
 
-            if (module == null) {
-                return ConfigResponse(false, "No module found. Available modules: ${
-                    ModuleManager.getInstance(project).modules.map { it.name }
-                }")
-            }
-
             val settings: RunnerAndConfigurationSettings? = when (request.type) {
+                // Java/JVM configurations
                 ConfigType.JUNIT_CLASS, ConfigType.JUNIT_METHOD -> {
+                    if (module == null) return ConfigResponse(false, "No module found for JUnit config")
                     createJUnitConfiguration(runManager, request, module)
                 }
                 ConfigType.APPLICATION -> {
+                    if (module == null) return ConfigResponse(false, "No module found for Application config")
                     createApplicationConfiguration(runManager, request, module)
                 }
                 ConfigType.SPRING_BOOT -> {
+                    if (module == null) return ConfigResponse(false, "No module found for Spring Boot config")
                     createSpringBootConfiguration(runManager, request, module, project)
+                }
+                ConfigType.GRADLE -> {
+                    createGradleConfiguration(runManager, request, project)
+                }
+                ConfigType.MAVEN -> {
+                    createMavenConfiguration(runManager, request, project)
+                }
+
+                // JavaScript/TypeScript configurations
+                ConfigType.NPM_SCRIPT -> {
+                    createNpmConfiguration(runManager, request, project)
+                }
+                ConfigType.NODE_JS -> {
+                    createNodeJsConfiguration(runManager, request, project)
+                }
+                ConfigType.VITEST, ConfigType.JEST -> {
+                    createJsTestConfiguration(runManager, request, project)
+                }
+
+                // Other configurations
+                ConfigType.SHELL_SCRIPT -> {
+                    createShellScriptConfiguration(runManager, request, project)
+                }
+                ConfigType.COMPOUND -> {
+                    // Compound configs are complex, return unsupported for now
+                    return ConfigResponse(false, "Compound configurations not yet supported via API")
                 }
             }
 
@@ -435,7 +459,7 @@ object DebugController {
                     return@invokeLater
                 }
 
-                // Find module
+                // Find module (only required for JVM configurations)
                 val module = if (request.moduleName != null) {
                     ModuleManager.getInstance(project).findModuleByName(request.moduleName)
                 } else {
@@ -444,7 +468,12 @@ object DebugController {
                         ?: ModuleManager.getInstance(project).modules.firstOrNull()
                 }
 
-                if (module == null) {
+                // Check module only for JVM types that require it
+                val requiresModule = request.type in listOf(
+                    ConfigType.JUNIT_CLASS, ConfigType.JUNIT_METHOD,
+                    ConfigType.APPLICATION, ConfigType.SPRING_BOOT
+                )
+                if (requiresModule && module == null) {
                     result.set(ConfigResponse(false, "No module found. Available modules: ${
                         ModuleManager.getInstance(project).modules.map { it.name }
                     }"))
@@ -453,14 +482,27 @@ object DebugController {
                 }
 
                 val settings: RunnerAndConfigurationSettings? = when (request.type) {
+                    // JVM types require module (already verified non-null above)
                     ConfigType.JUNIT_CLASS, ConfigType.JUNIT_METHOD -> {
-                        createJUnitConfiguration(runManager, request, module)
+                        createJUnitConfiguration(runManager, request, module!!)
                     }
                     ConfigType.APPLICATION -> {
-                        createApplicationConfiguration(runManager, request, module)
+                        createApplicationConfiguration(runManager, request, module!!)
                     }
                     ConfigType.SPRING_BOOT -> {
-                        createSpringBootConfiguration(runManager, request, module, project)
+                        createSpringBootConfiguration(runManager, request, module!!, project)
+                    }
+                    // Non-JVM types: don't require module
+                    ConfigType.GRADLE -> createGradleConfiguration(runManager, request, project)
+                    ConfigType.MAVEN -> createMavenConfiguration(runManager, request, project)
+                    ConfigType.NPM_SCRIPT -> createNpmConfiguration(runManager, request, project)
+                    ConfigType.NODE_JS -> createNodeJsConfiguration(runManager, request, project)
+                    ConfigType.VITEST, ConfigType.JEST -> createJsTestConfiguration(runManager, request, project)
+                    ConfigType.SHELL_SCRIPT -> createShellScriptConfiguration(runManager, request, project)
+                    ConfigType.COMPOUND -> {
+                        result.set(ConfigResponse(false, "Compound configurations not yet supported"))
+                        latch.countDown()
+                        return@invokeLater
                     }
                 }
 
@@ -865,5 +907,405 @@ object DebugController {
         }
 
         return modules
+    }
+
+    // ==================== JavaScript/TypeScript Configuration Methods ====================
+
+    /**
+     * Create an npm script configuration.
+     * Uses reflection to access Node.js plugin APIs.
+     */
+    private fun createNpmConfiguration(
+        runManager: RunManager,
+        request: CreateConfigRequest,
+        project: Project
+    ): RunnerAndConfigurationSettings? {
+        try {
+            // Try to find npm configuration type
+            val npmConfigType = findConfigurationTypeById("js.build_tools.npm")
+                ?: return createGenericScriptConfiguration(runManager, request, project, "npm")
+
+            val factory = npmConfigType.configurationFactories.firstOrNull() ?: return null
+            val settings = runManager.createConfiguration(request.name, factory)
+            val configuration = settings.configuration
+
+            // Set npm script via reflection
+            setPropertyViaReflection(configuration, "runSettings") { runSettings ->
+                setPropertyViaReflection(runSettings, "scriptName", request.scriptName ?: "start")
+                setPropertyViaReflection(runSettings, "arguments", request.programArguments ?: "")
+                if (!request.workingDirectory.isNullOrBlank()) {
+                    setPropertyViaReflection(runSettings, "workingDir", request.workingDirectory)
+                }
+            }
+
+            // Set environment variables
+            setEnvVariables(configuration, request.envVariables)
+
+            log.info("Created npm configuration: ${request.name} with script: ${request.scriptName}")
+            return settings
+        } catch (e: Exception) {
+            log.warn("Failed to create npm configuration, falling back to shell: ${e.message}")
+            return createGenericScriptConfiguration(runManager, request, project, "npm")
+        }
+    }
+
+    /**
+     * Create a Node.js run configuration.
+     */
+    private fun createNodeJsConfiguration(
+        runManager: RunManager,
+        request: CreateConfigRequest,
+        project: Project
+    ): RunnerAndConfigurationSettings? {
+        try {
+            val nodeConfigType = findConfigurationTypeById("NodeJSConfigurationType")
+                ?: return createGenericScriptConfiguration(runManager, request, project, "node")
+
+            val factory = nodeConfigType.configurationFactories.firstOrNull() ?: return null
+            val settings = runManager.createConfiguration(request.name, factory)
+            val configuration = settings.configuration
+
+            // Set Node.js file path
+            setPropertyViaReflection(configuration, "inputPath", request.scriptPath ?: "")
+
+            // Set Node.js options
+            if (!request.nodeOptions.isNullOrBlank()) {
+                setPropertyViaReflection(configuration, "nodeOptions", request.nodeOptions)
+            }
+
+            // Set working directory
+            if (!request.workingDirectory.isNullOrBlank()) {
+                setPropertyViaReflection(configuration, "workingDirectory", request.workingDirectory)
+            }
+
+            // Set environment variables
+            setEnvVariables(configuration, request.envVariables)
+
+            log.info("Created Node.js configuration: ${request.name} for file: ${request.scriptPath}")
+            return settings
+        } catch (e: Exception) {
+            log.warn("Failed to create Node.js configuration, falling back to shell: ${e.message}")
+            return createGenericScriptConfiguration(runManager, request, project, "node")
+        }
+    }
+
+    /**
+     * Create a Vitest or Jest test configuration.
+     */
+    private fun createJsTestConfiguration(
+        runManager: RunManager,
+        request: CreateConfigRequest,
+        project: Project
+    ): RunnerAndConfigurationSettings? {
+        val isVitest = request.type == ConfigType.VITEST
+        val testRunner = if (isVitest) "vitest" else "jest"
+
+        try {
+            // Try to find dedicated test runner config type
+            val configTypeId = if (isVitest) "vitest-run-configuration-type" else "JavaScriptTestRunnerJest"
+            val testConfigType = findConfigurationTypeById(configTypeId)
+
+            if (testConfigType != null) {
+                val factory = testConfigType.configurationFactories.firstOrNull() ?: return null
+                val settings = runManager.createConfiguration(request.name, factory)
+                val configuration = settings.configuration
+
+                // Set test pattern if provided
+                if (!request.testPattern.isNullOrBlank()) {
+                    setPropertyViaReflection(configuration, "testPattern", request.testPattern)
+                }
+
+                // Set working directory
+                if (!request.workingDirectory.isNullOrBlank()) {
+                    setPropertyViaReflection(configuration, "workingDirectory", request.workingDirectory)
+                }
+
+                // Set environment variables
+                setEnvVariables(configuration, request.envVariables)
+
+                log.info("Created $testRunner configuration: ${request.name}")
+                return settings
+            }
+
+            // Fallback: create as npm script running the test command
+            val npmRequest = request.copy(
+                scriptName = testRunner,
+                programArguments = buildString {
+                    if (!request.testPattern.isNullOrBlank()) {
+                        append(request.testPattern)
+                    }
+                    if (!request.programArguments.isNullOrBlank()) {
+                        if (isNotEmpty()) append(" ")
+                        append(request.programArguments)
+                    }
+                }.ifBlank { null }
+            )
+            return createNpmConfiguration(runManager, npmRequest, project)
+
+        } catch (e: Exception) {
+            log.warn("Failed to create $testRunner configuration: ${e.message}")
+            return createGenericScriptConfiguration(runManager, request, project, testRunner)
+        }
+    }
+
+    // ==================== Build Tool Configuration Methods ====================
+
+    /**
+     * Create a Gradle run configuration.
+     */
+    private fun createGradleConfiguration(
+        runManager: RunManager,
+        request: CreateConfigRequest,
+        project: Project
+    ): RunnerAndConfigurationSettings? {
+        try {
+            val gradleConfigType = findConfigurationTypeById("GradleRunConfiguration")
+                ?: return createGenericScriptConfiguration(runManager, request, project, "./gradlew")
+
+            val factory = gradleConfigType.configurationFactories.firstOrNull() ?: return null
+            val settings = runManager.createConfiguration(request.name, factory)
+            val configuration = settings.configuration
+
+            // Set Gradle task
+            val taskName = request.gradleTask ?: "build"
+            setPropertyViaReflection(configuration, "settings") { gradleSettings ->
+                setPropertyViaReflection(gradleSettings, "taskNames", listOf(taskName))
+                setPropertyViaReflection(gradleSettings, "externalProjectPath", project.basePath ?: "")
+            }
+
+            // Set VM options
+            if (!request.vmOptions.isNullOrBlank()) {
+                setPropertyViaReflection(configuration, "vmOptions", request.vmOptions)
+            }
+
+            log.info("Created Gradle configuration: ${request.name} for task: $taskName")
+            return settings
+        } catch (e: Exception) {
+            log.warn("Failed to create Gradle configuration, falling back to shell: ${e.message}")
+            return createGenericScriptConfiguration(runManager, request, project, "./gradlew")
+        }
+    }
+
+    /**
+     * Create a Maven run configuration.
+     */
+    private fun createMavenConfiguration(
+        runManager: RunManager,
+        request: CreateConfigRequest,
+        project: Project
+    ): RunnerAndConfigurationSettings? {
+        try {
+            val mavenConfigType = findConfigurationTypeById("MavenRunConfiguration")
+                ?: return createGenericScriptConfiguration(runManager, request, project, "./mvnw")
+
+            val factory = mavenConfigType.configurationFactories.firstOrNull() ?: return null
+            val settings = runManager.createConfiguration(request.name, factory)
+            val configuration = settings.configuration
+
+            // Set Maven goal
+            val goal = request.mavenGoal ?: "package"
+            setPropertyViaReflection(configuration, "goals", goal)
+            setPropertyViaReflection(configuration, "workingDirectory", project.basePath ?: "")
+
+            // Set VM options
+            if (!request.vmOptions.isNullOrBlank()) {
+                setPropertyViaReflection(configuration, "vmOptions", request.vmOptions)
+            }
+
+            log.info("Created Maven configuration: ${request.name} for goal: $goal")
+            return settings
+        } catch (e: Exception) {
+            log.warn("Failed to create Maven configuration, falling back to shell: ${e.message}")
+            return createGenericScriptConfiguration(runManager, request, project, "./mvnw")
+        }
+    }
+
+    /**
+     * Create a shell script configuration.
+     */
+    private fun createShellScriptConfiguration(
+        runManager: RunManager,
+        request: CreateConfigRequest,
+        project: Project
+    ): RunnerAndConfigurationSettings? {
+        try {
+            val shellConfigType = findConfigurationTypeById("ShConfigurationType")
+                ?: return null
+
+            val factory = shellConfigType.configurationFactories.firstOrNull() ?: return null
+            val settings = runManager.createConfiguration(request.name, factory)
+            val configuration = settings.configuration
+
+            // Set script path
+            setPropertyViaReflection(configuration, "scriptPath", request.scriptPath ?: "")
+
+            // Set working directory
+            if (!request.workingDirectory.isNullOrBlank()) {
+                setPropertyViaReflection(configuration, "scriptWorkingDirectory", request.workingDirectory)
+            } else {
+                setPropertyViaReflection(configuration, "scriptWorkingDirectory", project.basePath ?: "")
+            }
+
+            // Set environment variables
+            setEnvVariables(configuration, request.envVariables)
+
+            log.info("Created shell script configuration: ${request.name}")
+            return settings
+        } catch (e: Exception) {
+            log.warn("Failed to create shell script configuration: ${e.message}")
+            return null
+        }
+    }
+
+    // ==================== Helper Methods for Generic Configuration ====================
+
+    /**
+     * Create a generic script configuration as fallback.
+     * Uses shell script type to run the command.
+     */
+    private fun createGenericScriptConfiguration(
+        runManager: RunManager,
+        request: CreateConfigRequest,
+        project: Project,
+        command: String
+    ): RunnerAndConfigurationSettings? {
+        try {
+            val shellConfigType = findConfigurationTypeById("ShConfigurationType")
+            if (shellConfigType == null) {
+                log.warn("Shell configuration type not available")
+                return null
+            }
+
+            val factory = shellConfigType.configurationFactories.firstOrNull() ?: return null
+            val settings = runManager.createConfiguration(request.name, factory)
+            val configuration = settings.configuration
+
+            // Build the command line
+            val fullCommand = buildString {
+                append(command)
+                when (request.type) {
+                    ConfigType.NPM_SCRIPT -> {
+                        append(" run ")
+                        append(request.scriptName ?: "start")
+                    }
+                    ConfigType.NODE_JS -> {
+                        append(" ")
+                        append(request.scriptPath ?: "index.js")
+                    }
+                    ConfigType.VITEST, ConfigType.JEST -> {
+                        if (!request.testPattern.isNullOrBlank()) {
+                            append(" ")
+                            append(request.testPattern)
+                        }
+                    }
+                    ConfigType.GRADLE -> {
+                        append(" ")
+                        append(request.gradleTask ?: "build")
+                    }
+                    ConfigType.MAVEN -> {
+                        append(" ")
+                        append(request.mavenGoal ?: "package")
+                    }
+                    else -> {}
+                }
+                if (!request.programArguments.isNullOrBlank()) {
+                    append(" ")
+                    append(request.programArguments)
+                }
+            }
+
+            // Set as inline script
+            setPropertyViaReflection(configuration, "scriptText", fullCommand)
+            setPropertyViaReflection(configuration, "executeScriptFile", false)
+
+            // Set working directory
+            val workDir = request.workingDirectory ?: project.basePath ?: ""
+            setPropertyViaReflection(configuration, "scriptWorkingDirectory", workDir)
+
+            // Set environment variables
+            setEnvVariables(configuration, request.envVariables)
+
+            log.info("Created generic script configuration: ${request.name} with command: $fullCommand")
+            return settings
+        } catch (e: Exception) {
+            log.error("Failed to create generic script configuration: ${e.message}", e)
+            return null
+        }
+    }
+
+    /**
+     * Find a configuration type by its ID using reflection.
+     */
+    private fun findConfigurationTypeById(typeId: String): com.intellij.execution.configurations.ConfigurationType? {
+        return try {
+            val allTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.extensionList
+            allTypes.find { it.id == typeId || it.id.contains(typeId, ignoreCase = true) }
+        } catch (e: Exception) {
+            log.debug("Configuration type $typeId not found: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Set a property on an object via reflection.
+     */
+    private fun setPropertyViaReflection(obj: Any, propertyName: String, value: Any?) {
+        if (value == null) return
+        try {
+            // Try setter method first
+            val setterName = "set${propertyName.replaceFirstChar { it.uppercase() }}"
+            val setter = obj.javaClass.methods.find { it.name == setterName && it.parameterCount == 1 }
+            if (setter != null) {
+                setter.invoke(obj, value)
+                return
+            }
+
+            // Try direct field access
+            val field = obj.javaClass.declaredFields.find { it.name == propertyName }
+            if (field != null) {
+                field.isAccessible = true
+                field.set(obj, value)
+            }
+        } catch (e: Exception) {
+            log.debug("Failed to set property $propertyName: ${e.message}")
+        }
+    }
+
+    /**
+     * Set a property and then configure its nested object.
+     */
+    private fun setPropertyViaReflection(obj: Any, propertyName: String, configure: (Any) -> Unit) {
+        try {
+            // Get the property
+            val getterName = "get${propertyName.replaceFirstChar { it.uppercase() }}"
+            val getter = obj.javaClass.methods.find { it.name == getterName && it.parameterCount == 0 }
+            if (getter != null) {
+                val nestedObj = getter.invoke(obj)
+                if (nestedObj != null) {
+                    configure(nestedObj)
+                }
+            }
+        } catch (e: Exception) {
+            log.debug("Failed to get and configure property $propertyName: ${e.message}")
+        }
+    }
+
+    /**
+     * Set environment variables on a configuration.
+     */
+    private fun setEnvVariables(configuration: Any, envVars: Map<String, String>?) {
+        if (envVars.isNullOrEmpty()) return
+        try {
+            val getEnvsMethod = configuration.javaClass.getMethod("getEnvs")
+            @Suppress("UNCHECKED_CAST")
+            val existingEnvs = (getEnvsMethod.invoke(configuration) as? Map<String, String>)?.toMutableMap()
+                ?: mutableMapOf()
+            existingEnvs.putAll(envVars)
+
+            val setEnvsMethod = configuration.javaClass.getMethod("setEnvs", Map::class.java)
+            setEnvsMethod.invoke(configuration, existingEnvs)
+        } catch (e: Exception) {
+            log.debug("Failed to set environment variables: ${e.message}")
+        }
     }
 }

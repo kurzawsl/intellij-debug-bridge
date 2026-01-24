@@ -1,0 +1,1096 @@
+{
+	"info": {
+		"_postman_id": "debug-bridge-collection",
+		"name": "IntelliJ Debug Bridge",
+		"description": "REST API for controlling IntelliJ debugger from external tools (MCP, AI assistants, etc.)\n\nBase URL: http://127.0.0.1:19999\n\n## API Versions\n\n### V1 API (Legacy)\nEndpoints under `/debug/*` - works with the currently active session.\nBest for single-project debugging.\n\n### V2 API (Multi-Project)\nEndpoints under `/projects/*` and `/sessions/*` - explicitly target projects and sessions by ID.\nBest for debugging multiple microservices simultaneously.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://127.0.0.1:19999",
+			"type": "string"
+		},
+		{
+			"key": "sessionId",
+			"value": "",
+			"type": "string",
+			"description": "UUID of the debug session (get from /sessions)"
+		},
+		{
+			"key": "projectId",
+			"value": "",
+			"type": "string",
+			"description": "ID of the project (get from /projects)"
+		}
+	],
+	"item": [
+		{
+			"name": "Health & Status",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["health"]
+						},
+						"description": "Check if Debug Bridge server is running"
+					}
+				},
+				{
+					"name": "Service Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/",
+							"host": ["{{baseUrl}}"],
+							"path": [""]
+						},
+						"description": "Get service info and version"
+					}
+				}
+			]
+		},
+		{
+			"name": "V2 - Discovery",
+			"description": "V2 API endpoints for discovering projects and sessions",
+			"item": [
+				{
+					"name": "List All Projects",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.projects && jsonData.projects.length > 0) {",
+									"    pm.collectionVariables.set('projectId', jsonData.projects[0].id);",
+									"    console.log('Set projectId to: ' + jsonData.projects[0].id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/projects",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects"]
+						},
+						"description": "List all open projects in IntelliJ. Returns project IDs that can be used for project-scoped operations.\n\nResponse includes:\n- id: Stable project ID (SHA-256 hash of path)\n- name: Project display name\n- path: Project directory path\n- sessionCount: Number of active debug sessions"
+					}
+				},
+				{
+					"name": "List All Sessions",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.sessions && jsonData.sessions.length > 0) {",
+									"    pm.collectionVariables.set('sessionId', jsonData.sessions[0].id);",
+									"    console.log('Set sessionId to: ' + jsonData.sessions[0].id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions"]
+						},
+						"description": "List all active debug sessions across all projects.\n\nResponse includes:\n- id: Session UUID\n- name: Session/configuration name\n- projectId: Parent project ID\n- projectName: Parent project name\n- status: RUNNING, SUSPENDED, or TERMINATED\n- location: Current debug location (if suspended)"
+					}
+				}
+			]
+		},
+		{
+			"name": "V2 - Session Operations",
+			"description": "V2 API endpoints for controlling specific debug sessions by ID",
+			"item": [
+				{
+					"name": "Get Session Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}"]
+						},
+						"description": "Get detailed information about a specific debug session including current location and stack trace."
+					}
+				},
+				{
+					"name": "Get Session Variables",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}/variables",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}", "variables"]
+						},
+						"description": "Get local variables and 'this' object for a specific session."
+					}
+				},
+				{
+					"name": "Step Over (Session)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}/step-over",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}", "step-over"]
+						},
+						"description": "Execute step over (F8) in the specified session."
+					}
+				},
+				{
+					"name": "Step Into (Session)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}/step-into",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}", "step-into"]
+						},
+						"description": "Execute step into (F7) in the specified session."
+					}
+				},
+				{
+					"name": "Step Out (Session)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}/step-out",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}", "step-out"]
+						},
+						"description": "Execute step out (Shift+F8) in the specified session."
+					}
+				},
+				{
+					"name": "Resume (Session)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}/resume",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}", "resume"]
+						},
+						"description": "Resume execution (F9) in the specified session."
+					}
+				},
+				{
+					"name": "Pause (Session)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}/pause",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}", "pause"]
+						},
+						"description": "Pause execution in the specified session."
+					}
+				},
+				{
+					"name": "Evaluate Expression (Session)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"expression\": \"myVariable.toString()\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}/evaluate",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}", "evaluate"]
+						},
+						"description": "Evaluate an expression in the context of the specified session."
+					}
+				},
+				{
+					"name": "Stop Session",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/sessions/{{sessionId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["sessions", "{{sessionId}}"]
+						},
+						"description": "Stop the specified debug session."
+					}
+				}
+			]
+		},
+		{
+			"name": "V2 - Project Operations",
+			"description": "V2 API endpoints for project-scoped operations",
+			"item": [
+				{
+					"name": "Get Project Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}"]
+						},
+						"description": "Get detailed information about a specific project."
+					}
+				},
+				{
+					"name": "List Project Sessions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}/sessions",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}", "sessions"]
+						},
+						"description": "List all debug sessions for a specific project."
+					}
+				},
+				{
+					"name": "List Project Configurations",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}/configurations",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}", "configurations"]
+						},
+						"description": "List available run/debug configurations for a project."
+					}
+				},
+				{
+					"name": "List Project Modules",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}/modules",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}", "modules"]
+						},
+						"description": "List all modules in a specific project."
+					}
+				},
+				{
+					"name": "List Project Breakpoints",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}/breakpoints",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}", "breakpoints"]
+						},
+						"description": "List all breakpoints in a specific project."
+					}
+				},
+				{
+					"name": "Add Project Breakpoint",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"file\": \"MyClass.java\",\n    \"line\": 42,\n    \"condition\": \"x > 10\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}/breakpoints",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}", "breakpoints"]
+						},
+						"description": "Add a breakpoint in a specific project."
+					}
+				},
+				{
+					"name": "Remove Project Breakpoint",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"file\": \"MyClass.java\",\n    \"line\": 42\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}/breakpoints",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}", "breakpoints"]
+						},
+						"description": "Remove a breakpoint from a specific project."
+					}
+				},
+				{
+					"name": "Start Debug in Project",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/projects/{{projectId}}/debug/start?config=MyConfiguration",
+							"host": ["{{baseUrl}}"],
+							"path": ["projects", "{{projectId}}", "debug", "start"],
+							"query": [
+								{
+									"key": "config",
+									"value": "MyConfiguration",
+									"description": "Optional: specific configuration name"
+								}
+							]
+						},
+						"description": "Start a debug session in a specific project. Optionally specify a configuration name."
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - Debug State (Legacy)",
+			"item": [
+				{
+					"name": "Get Debug State (Fast)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/state",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "state"]
+						},
+						"description": "Get current debug state (lightweight, no stack trace)"
+					}
+				},
+				{
+					"name": "Get Debug State (Full with Stack)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/state?full=true",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "state"],
+							"query": [
+								{
+									"key": "full",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Get full debug state including stack trace (slower)"
+					}
+				},
+				{
+					"name": "Get Variables",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/variables",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "variables"]
+						},
+						"description": "Get local variables and 'this' object at current breakpoint"
+					}
+				},
+				{
+					"name": "Expand Variable",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"path\": \"this.fieldName\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/variables/expand",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "variables", "expand"]
+						},
+						"description": "Expand a nested variable to see its children"
+					}
+				},
+				{
+					"name": "Get Stack Frames",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/frames",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "frames"]
+						},
+						"description": "Get full stack trace with frame indices"
+					}
+				},
+				{
+					"name": "Select Stack Frame",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/frames/select?index=0",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "frames", "select"],
+							"query": [
+								{
+									"key": "index",
+									"value": "0"
+								}
+							]
+						},
+						"description": "Select a specific stack frame (0 = current, 1 = caller, etc.)"
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - Session Control (Legacy)",
+			"item": [
+				{
+					"name": "Get Run Configurations",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/configurations",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "configurations"]
+						},
+						"description": "List available run/debug configurations"
+					}
+				},
+				{
+					"name": "Create JUnit Class Config",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"MyTestClass\",\n    \"type\": \"JUNIT_CLASS\",\n    \"className\": \"com.example.MyTestClass\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/configurations",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "configurations"]
+						},
+						"description": "Create a JUnit configuration to run ALL tests in a class"
+					}
+				},
+				{
+					"name": "Create JUnit Method Config",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"MyTestClass.testMethod\",\n    \"type\": \"JUNIT_METHOD\",\n    \"className\": \"com.example.MyTestClass\",\n    \"methodName\": \"testMethod\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/configurations",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "configurations"]
+						},
+						"description": "Create a JUnit configuration to run a SINGLE test method"
+					}
+				},
+				{
+					"name": "Create Application Config",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"MyApplication\",\n    \"type\": \"APPLICATION\",\n    \"className\": \"com.example.MainClass\",\n    \"vmOptions\": \"-Xmx512m\",\n    \"programArguments\": \"--spring.profiles.active=dev\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/configurations",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "configurations"]
+						},
+						"description": "Create a configuration to run main application class"
+					}
+				},
+				{
+					"name": "Create Spring Boot Configuration",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"DemoApplication\",\n    \"type\": \"SPRING_BOOT\",\n    \"className\": \"com.example.demo.DemoApplication\",\n    \"activeProfiles\": \"devpay\",\n    \"awsProfile\": \"my-aws-profile\",\n    \"awsRegion\": \"eu-west-2\",\n    \"vmOptions\": \"-Xmx1g\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/configurations",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "configurations"]
+						},
+						"description": "Create a Spring Boot configuration with active profiles and AWS credentials."
+					}
+				},
+				{
+					"name": "Delete Configuration",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/configurations?name=MyConfiguration",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "configurations"],
+							"query": [
+								{
+									"key": "name",
+									"value": "MyConfiguration"
+								}
+							]
+						},
+						"description": "Delete a run configuration by name"
+					}
+				},
+				{
+					"name": "Get Modules",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/modules",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "modules"]
+						},
+						"description": "List available modules in the project"
+					}
+				},
+				{
+					"name": "Start Debug Session",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/start?config=MyConfiguration",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "start"],
+							"query": [
+								{
+									"key": "config",
+									"value": "MyConfiguration"
+								}
+							]
+						},
+						"description": "Start debugging with specified configuration name"
+					}
+				},
+				{
+					"name": "Stop Debug Session",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/stop",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "stop"]
+						},
+						"description": "Stop current debug session"
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - Execution Control (Legacy)",
+			"item": [
+				{
+					"name": "Step Over (F8)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/step-over",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "step-over"]
+						},
+						"description": "Execute step over - go to next line without entering methods"
+					}
+				},
+				{
+					"name": "Step Into (F7)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/step-into",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "step-into"]
+						},
+						"description": "Execute step into - enter the method on current line"
+					}
+				},
+				{
+					"name": "Step Out (Shift+F8)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/step-out",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "step-out"]
+						},
+						"description": "Execute step out - run until current method returns"
+					}
+				},
+				{
+					"name": "Resume (F9)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/resume",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "resume"]
+						},
+						"description": "Resume execution until next breakpoint"
+					}
+				},
+				{
+					"name": "Pause",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/pause",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "pause"]
+						},
+						"description": "Pause execution at current location"
+					}
+				},
+				{
+					"name": "Run to Cursor",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/run-to-cursor?file=MyClass.java&line=42",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "run-to-cursor"],
+							"query": [
+								{
+									"key": "file",
+									"value": "MyClass.java"
+								},
+								{
+									"key": "line",
+									"value": "42"
+								}
+							]
+						},
+						"description": "Run until reaching specified line in file"
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - Expression Evaluation (Legacy)",
+			"item": [
+				{
+					"name": "Evaluate Expression",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"expression\": \"myVariable.toString()\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/evaluate",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "evaluate"]
+						},
+						"description": "Evaluate an expression in current debug context"
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - Breakpoints (Legacy)",
+			"item": [
+				{
+					"name": "List Breakpoints",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/breakpoints",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "breakpoints"]
+						},
+						"description": "List all breakpoints in current project"
+					}
+				},
+				{
+					"name": "Add Breakpoint",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"file\": \"MyClass.java\",\n    \"line\": 42,\n    \"condition\": \"x > 10\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/breakpoints",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "breakpoints"]
+						},
+						"description": "Add a breakpoint at specified file and line. Condition is optional."
+					}
+				},
+				{
+					"name": "Remove Breakpoint",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"file\": \"MyClass.java\",\n    \"line\": 42\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/breakpoints",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "breakpoints"]
+						},
+						"description": "Remove breakpoint at specified file and line"
+					}
+				},
+				{
+					"name": "Toggle Breakpoint",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"file\": \"MyClass.java\",\n    \"line\": 42\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/debug/breakpoints/toggle",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "breakpoints", "toggle"]
+						},
+						"description": "Toggle breakpoint enabled/disabled state"
+					}
+				},
+				{
+					"name": "Remove All Breakpoints",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/breakpoints/all",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "breakpoints", "all"]
+						},
+						"description": "Remove all breakpoints from project"
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - Console Output (Legacy)",
+			"item": [
+				{
+					"name": "Get Console (Last 100 Lines)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/console",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "console"]
+						},
+						"description": "Get last 100 lines of console output (default)"
+					}
+				},
+				{
+					"name": "Get Console (Custom Lines)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/console?last=50",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "console"],
+							"query": [
+								{
+									"key": "last",
+									"value": "50"
+								}
+							]
+						},
+						"description": "Get last N lines of console output"
+					}
+				},
+				{
+					"name": "Get Console (Filtered)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/console?filter=ERROR&last=100",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "console"],
+							"query": [
+								{
+									"key": "filter",
+									"value": "ERROR"
+								},
+								{
+									"key": "last",
+									"value": "100"
+								}
+							]
+						},
+						"description": "Get console lines containing 'ERROR'"
+					}
+				},
+				{
+					"name": "Clear Console Buffer",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/console",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "console"]
+						},
+						"description": "Clear the console output buffer"
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - Inspections (Legacy)",
+			"item": [
+				{
+					"name": "Get All Open File Problems",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/problems",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "problems"]
+						},
+						"description": "Get linter/inspection problems from all currently open files"
+					}
+				},
+				{
+					"name": "Get Problems for File",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/problems?file=MyClass.java",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "problems"],
+							"query": [
+								{
+									"key": "file",
+									"value": "MyClass.java"
+								}
+							]
+						},
+						"description": "Get linter/inspection problems for a specific file."
+					}
+				}
+			]
+		},
+		{
+			"name": "V1 - File Operations (Legacy)",
+			"item": [
+				{
+					"name": "Open File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/open-file?file=MyClass.java",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "open-file"],
+							"query": [
+								{
+									"key": "file",
+									"value": "MyClass.java"
+								}
+							]
+						},
+						"description": "Open a file in the IntelliJ editor"
+					}
+				},
+				{
+					"name": "Open File at Line",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/open-file?file=MyClass.java&line=42&column=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "open-file"],
+							"query": [
+								{
+									"key": "file",
+									"value": "MyClass.java"
+								},
+								{
+									"key": "line",
+									"value": "42"
+								},
+								{
+									"key": "column",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Open a file at a specific line and column"
+					}
+				},
+				{
+					"name": "Close File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/close-file?file=MyClass.java",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "close-file"],
+							"query": [
+								{
+									"key": "file",
+									"value": "MyClass.java"
+								}
+							]
+						},
+						"description": "Close a file in the editor"
+					}
+				},
+				{
+					"name": "List Open Files",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/open-files",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "open-files"]
+						},
+						"description": "Get list of currently open files in the editor"
+					}
+				},
+				{
+					"name": "Go To Line",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/debug/go-to-line?line=42&column=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["debug", "go-to-line"],
+							"query": [
+								{
+									"key": "line",
+									"value": "42"
+								},
+								{
+									"key": "column",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Navigate to a specific line in the currently active file"
+					}
+				}
+			]
+		}
+	]
+}

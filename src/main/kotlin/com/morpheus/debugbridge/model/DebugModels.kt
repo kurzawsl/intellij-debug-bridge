@@ -162,14 +162,29 @@ data class ApiResponse(
 data class CreateConfigRequest(
     val name: String,                    // Configuration name
     val type: ConfigType,                // Type of configuration
-    val className: String,               // Fully qualified class name
+
+    // Java/JVM specific
+    val className: String? = null,       // Fully qualified class name (Java/Kotlin)
     val methodName: String? = null,      // For single test method (optional)
     val moduleName: String? = null,      // Module name (optional, auto-detected)
     val vmOptions: String? = null,       // JVM options
-    val programArguments: String? = null,// Program arguments
     val activeProfiles: String? = null,  // Spring Boot active profiles (comma-separated)
     val awsProfile: String? = null,      // AWS credential profile name
-    val awsRegion: String? = null        // AWS region (e.g., eu-west-2)
+    val awsRegion: String? = null,       // AWS region (e.g., eu-west-2)
+    val gradleTask: String? = null,      // Gradle task name (e.g., "test", "build")
+    val mavenGoal: String? = null,       // Maven goal (e.g., "test", "package")
+
+    // JavaScript/TypeScript specific
+    val scriptName: String? = null,      // npm script name (e.g., "test", "dev")
+    val scriptPath: String? = null,      // Path to JS/TS file to run
+    val testPattern: String? = null,     // Test pattern for Vitest/Jest (e.g., "*.test.ts")
+    val nodeOptions: String? = null,     // Node.js options (e.g., "--inspect")
+    val packageManager: String? = null,  // "npm", "yarn", "pnpm" (default: npm)
+
+    // Common options
+    val programArguments: String? = null,// Program arguments
+    val workingDirectory: String? = null,// Working directory (default: project root)
+    val envVariables: Map<String, String>? = null // Environment variables
 )
 
 /**
@@ -177,10 +192,23 @@ data class CreateConfigRequest(
  */
 @Serializable
 enum class ConfigType {
+    // Java/JVM configurations
     JUNIT_CLASS,        // Run all tests in a class
     JUNIT_METHOD,       // Run single test method
-    APPLICATION,        // Run main application (generic)
-    SPRING_BOOT         // Run Spring Boot application (with active profiles + AWS)
+    APPLICATION,        // Run main application (generic Java)
+    SPRING_BOOT,        // Run Spring Boot application (with active profiles + AWS)
+    GRADLE,             // Run Gradle task
+    MAVEN,              // Run Maven goal
+
+    // JavaScript/TypeScript configurations
+    NPM_SCRIPT,         // Run npm script (npm run <script>)
+    NODE_JS,            // Run Node.js file
+    VITEST,             // Run Vitest tests
+    JEST,               // Run Jest tests
+
+    // Other configurations
+    SHELL_SCRIPT,       // Run shell script
+    COMPOUND            // Run multiple configurations
 }
 
 /**
