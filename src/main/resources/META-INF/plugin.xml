@@ -1,29 +1,40 @@
 <idea-plugin>
     <id>com.morpheus.debug-bridge</id>
     <name>Debug Bridge for AI</name>
-    <version>1.0.0</version>
+    <version>2.0.0</version>
     <vendor email="support@morpheus.com" url="https://github.com/morpheus">Morpheus</vendor>
 
     <description>
     Bridges IntelliJ debugger to AI assistants via REST API on localhost:19999.
     Allows AI to see debug location, inspect variables, view call stack, and control execution.
+    V2 adds multi-project support for debugging multiple microservices simultaneously.
     </description>
 
     <change-notes>
+    2.0.0 - Multi-project support: debug multiple microservices simultaneously
+          - New V2 API: /projects, /sessions/{id}, /projects/{id}/*
+          - Stable project IDs (SHA-256 hash of path)
+          - Unique session IDs (UUID)
+          - Backward compatible: V1 API still works
     1.0.0 - Initial release with REST API for debug inspection and control.
     </change-notes>
 
-    <idea-version since-build="243" until-build="251.*"/>
+    <idea-version since-build="243" until-build="253.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
+    <depends>JUnit</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <!-- Application-level services (singletons for entire IDE) -->
         <applicationService
             serviceImplementation="com.morpheus.debugbridge.service.DebugStateService"/>
+        <applicationService
+            serviceImplementation="com.morpheus.debugbridge.service.AppRegistryService"/>
 
+        <!-- Project-level services (one per open project) -->
         <projectService
-            serviceImplementation="com.morpheus.debugbridge.service.ProjectDebugService"/>
+            serviceImplementation="com.morpheus.debugbridge.service.ProjectStateService"/>
 
         <postStartupActivity
             implementation="com.morpheus.debugbridge.DebugBridgeStartup"/>

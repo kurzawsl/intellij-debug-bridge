@@ -12,6 +12,8 @@ import com.intellij.xdebugger.frame.XValueChildrenList
 import com.intellij.xdebugger.frame.XValueNode
 import com.intellij.xdebugger.frame.XValuePlace
 import com.intellij.xdebugger.frame.presentation.XValuePresentation
+import com.morpheus.debugbridge.config.TimeoutConfig
+import com.morpheus.debugbridge.model.ExpandedVariableResponse
 import com.morpheus.debugbridge.model.VariableInfo
 import com.morpheus.debugbridge.model.VariablesResponse
 import java.util.concurrent.CopyOnWriteArrayList
@@ -22,6 +24,11 @@ import javax.swing.Icon
 
 /**
  * Extracts variables from the current debug stack frame.
+ *
+ * PERFORMANCE OPTIMIZATIONS:
+ * - Configurable timeouts via TimeoutConfig
+ * - Parallel presentation extraction
+ * - Early return on partial data if timeout
  */
 object VariableExtractor {
 
@@ -54,8 +61,39 @@ object VariableExtractor {
             override fun setMessage(message: String, icon: Icon?, attributes: SimpleTextAttributes, link: XDebuggerTreeNodeHyperlink?) {}
         })
 
-        if (!collectLatch.await(3, TimeUnit.SECONDS)) {
-            return VariablesResponse(locals = emptyList())
+        // PERFORMANCE: Reduced timeout from 3s to 1.5s
+        if (!collectLatch.await(TimeoutConfig.VARIABLE_COLLECT_MS, TimeUnit.MILLISECONDS)) {
+            log.debug("Variable collection timeout - returning partial results")
+            // FIX #5: Snapshot the list to avoid race with concurrent additions
+            val snapshot = collectedVars.toList()
+            if (snapshot.isNotEmpty()) {
+                return extractPresentationsWithTimeout(snapshot, timedOut = true)
+            }
+            return VariablesResponse(
+                locals = emptyList(),
+                warning = "Variable collection timed out - no variables retrieved"
+            )
+        }
+
+        // Safe to use directly after latch signals completion
+        return extractPresentationsWithTimeout(collectedVars.toList(), timedOut = false)
+    }
+
+    /**
+     * Extract presentations in parallel with a global timeout
+     *
+     * @param collectedVars Variables to extract presentations from
+     * @param timedOut Whether variable collection already timed out (affects warning message)
+     */
+    private fun extractPresentationsWithTimeout(
+        collectedVars: List<CollectedVar>,
+        timedOut: Boolean = false
+    ): VariablesResponse {
+        if (collectedVars.isEmpty()) {
+            return VariablesResponse(
+                locals = emptyList(),
+                warning = if (timedOut) "Variable collection timed out" else null
+            )
         }
 
         val variables = CopyOnWriteArrayList<VariableInfo>()
@@ -72,11 +110,21 @@ object VariableExtractor {
             }
         }
 
-        presentationLatch.await(5, TimeUnit.SECONDS)
+        // PERFORMANCE: Reduced timeout from 5s to 2s
+        val presentationCompleted = presentationLatch.await(TimeoutConfig.VARIABLE_PRESENTATION_MS, TimeUnit.MILLISECONDS)
+
+        // Determine warning based on timeout states
+        val warning = when {
+            timedOut && !presentationCompleted -> "Variable collection AND presentation extraction timed out - partial data"
+            timedOut -> "Variable collection timed out - some variables may be missing"
+            !presentationCompleted -> "Presentation extraction timed out - ${variables.size}/${collectedVars.size} variables retrieved"
+            else -> null
+        }
 
         return VariablesResponse(
             locals = variables.sortedBy { it.name },
-            thisObject = null
+            thisObject = null,
+            warning = warning
         )
     }
 
@@ -95,7 +143,7 @@ object VariableExtractor {
                 result.set(VariableInfo(
                     name = name,
                     type = type ?: "unknown",
-                    value = sanitizeValue(directValue ?: value),
+                    value = sanitizeValue(name, directValue ?: value),
                     hasChildren = hasChildren
                 ))
                 latch.countDown()
@@ -122,7 +170,7 @@ object VariableExtractor {
                 result.set(VariableInfo(
                     name = name,
                     type = inferredType,
-                    value = sanitizeValue(extractedValue),
+                    value = sanitizeValue(name, extractedValue),
                     hasChildren = hasChildren
                 ))
                 latch.countDown()
@@ -131,7 +179,7 @@ object VariableExtractor {
             override fun setFullValueEvaluator(fullValueEvaluator: XFullValueEvaluator) {}
         }, XValuePlace.TREE)
 
-        if (!latch.await(2, TimeUnit.SECONDS)) {
+        if (!latch.await(TimeoutConfig.SINGLE_VARIABLE_MS, TimeUnit.MILLISECONDS)) {
             return VariableInfo(name = name, type = "unknown", value = "<timeout>", hasChildren = false)
         }
 
@@ -149,14 +197,17 @@ object VariableExtractor {
             val descriptor = getDescriptor.invoke(xValue) ?: return null
             val descriptorClass = descriptor.javaClass
 
-            // Try getDeclaredType which returns the Java type
+            // Try getDeclaredType which returns the Java type (may not exist on all descriptors)
             try {
                 val getDeclaredType = descriptorClass.getMethod("getDeclaredType")
                 val declaredType = getDeclaredType.invoke(descriptor) as? String
                 if (!declaredType.isNullOrBlank()) {
                     return declaredType
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                // Expected: getDeclaredType may not exist on this descriptor type
+                log.trace("getDeclaredType not available: ${e.message}")
+            }
 
             // Try to get the JDI Value and its type
             try {
@@ -184,12 +235,19 @@ object VariableExtractor {
                                 val arrayType = typeMethod.invoke(jdiValue)
                                 val nameMethod = arrayType.javaClass.getMethod("name")
                                 nameMethod.invoke(arrayType) as? String
-                            } catch (e: Exception) { "array" }
+                            } catch (e: Exception) {
+                                // Expected: array type extraction may fail, fallback to generic "array"
+                                log.trace("Array type extraction failed: ${e.message}")
+                                "array"
+                            }
                         }
                         else -> null
                     }
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                // Expected: getValue may not exist or JDI type extraction may fail
+                log.trace("JDI value type extraction failed: ${e.message}")
+            }
         } catch (e: Exception) {
             log.debug("inferTypeFromValue failed: ${e.message}")
         }
@@ -197,59 +255,11 @@ object VariableExtractor {
     }
 
     /**
-     * Render XValuePresentation to a string by calling renderValue with a custom renderer
+     * Render XValuePresentation to a string
+     * FIX: Delegate to JdiValueExtractor to avoid code duplication
      */
     private fun renderPresentation(presentation: XValuePresentation): String? {
-        try {
-            val sb = StringBuilder()
-
-            // Use reflection to create a dynamic proxy that implements XValueTextRenderer
-            // This avoids compile-time dependency on specific method signatures
-            val rendererClass = Class.forName("com.intellij.xdebugger.frame.presentation.XValuePresentation\$XValueTextRenderer")
-
-            val handler = java.lang.reflect.InvocationHandler { _, method, args ->
-                when (method.name) {
-                    "renderValue", "renderNumericValue", "renderKeywordValue" -> {
-                        if (args != null && args.isNotEmpty()) {
-                            sb.append(args[0])
-                        }
-                    }
-                    "renderStringValue" -> {
-                        if (args != null && args.isNotEmpty()) {
-                            sb.append("\"").append(args[0]).append("\"")
-                        }
-                    }
-                    "renderSpecialSymbol" -> {
-                        if (args != null && args.isNotEmpty()) {
-                            sb.append(args[0])
-                        }
-                    }
-                    "renderError" -> {
-                        if (args != null && args.isNotEmpty()) {
-                            sb.append("<error: ").append(args[0]).append(">")
-                        }
-                    }
-                    // renderComment - ignore
-                }
-                null
-            }
-
-            val rendererProxy = java.lang.reflect.Proxy.newProxyInstance(
-                rendererClass.classLoader,
-                arrayOf(rendererClass),
-                handler
-            )
-
-            // Call presentation.renderValue(renderer)
-            val renderMethod = presentation.javaClass.getMethod("renderValue", rendererClass)
-            renderMethod.invoke(presentation, rendererProxy)
-
-            val result = sb.toString()
-            return if (result.isNotBlank()) result else null
-        } catch (e: Exception) {
-            log.debug("renderPresentation failed: ${e.message}")
-            return null
-        }
+        return JdiValueExtractor.renderPresentation(presentation)
     }
 
     /**
@@ -302,155 +312,210 @@ object VariableExtractor {
 
     /**
      * Try to extract value directly from XValue (for JavaValue instances)
+     * FIX: Delegate to JdiValueExtractor to avoid code duplication
      */
     private fun extractValueFromXValue(xValue: XValue): String? {
-        try {
-            val clazz = xValue.javaClass
-
-            // For JavaValue, get the descriptor and then the JDI Value
-            val getDescriptor = clazz.getMethod("getDescriptor")
-            val descriptor = getDescriptor.invoke(xValue) ?: return null
-            val descriptorClass = descriptor.javaClass
-
-            // First, try to get the JDI Value object and extract primitive value
-            try {
-                val getValueMethod = descriptorClass.getMethod("getValue")
-                val jdiValue = getValueMethod.invoke(descriptor)
-                if (jdiValue != null) {
-                    val extractedValue = extractFromJdiValue(jdiValue)
-                    if (extractedValue != null) {
-                        return extractedValue
-                    }
-                }
-            } catch (e: Exception) {
-                log.debug("getValue() failed: ${e.message}")
-            }
-
-            // Try getValueText which returns the formatted value string
-            try {
-                val getValueText = descriptorClass.getMethod("getValueText")
-                val valueText = getValueText.invoke(descriptor) as? String
-                if (!valueText.isNullOrBlank() && !valueText.contains("Collecting data")) {
-                    return valueText
-                }
-            } catch (e: Exception) {
-                log.debug("getValueText() failed: ${e.message}")
-            }
-
-            // Try getValueLabel and parse "name = value" format
-            try {
-                val getValueLabel = descriptorClass.getMethod("getValueLabel")
-                val label = getValueLabel.invoke(descriptor) as? String
-                if (!label.isNullOrBlank()) {
-                    // Parse "varName = value" format
-                    if (label.contains(" = ")) {
-                        val valuePart = label.substringAfter(" = ").trim()
-                        if (valuePart.isNotEmpty()) {
-                            return valuePart
-                        }
-                    }
-                    return label
-                }
-            } catch (e: Exception) {
-                log.debug("getValueLabel() failed: ${e.message}")
-            }
-
-        } catch (e: Exception) {
-            log.debug("extractValueFromXValue failed: ${e.message}")
-        }
-        return null
+        return JdiValueExtractor.extractValueFromXValue(xValue)
     }
 
     /**
-     * Extract actual value from JDI Value object (com.sun.jdi.Value)
+     * Check if a variable name indicates sensitive data that should be masked.
+     * SECURITY: Checks the variable NAME, not the value, to avoid information leakage.
      */
-    private fun extractFromJdiValue(jdiValue: Any): String? {
-        val jdiClass = jdiValue.javaClass
-        val className = jdiClass.name
-
-        try {
-            // For primitive values (IntegerValue, BooleanValue, etc.), call value()
-            if (className.contains("PrimitiveValue") ||
-                className.contains("IntegerValue") ||
-                className.contains("LongValue") ||
-                className.contains("BooleanValue") ||
-                className.contains("DoubleValue") ||
-                className.contains("FloatValue") ||
-                className.contains("CharValue") ||
-                className.contains("ByteValue") ||
-                className.contains("ShortValue")) {
-                try {
-                    val valueMethod = jdiClass.getMethod("value")
-                    val primitiveValue = valueMethod.invoke(jdiValue)
-                    if (primitiveValue != null) {
-                        return primitiveValue.toString()
-                    }
-                } catch (e: Exception) {
-                    log.debug("Primitive value() failed: ${e.message}")
-                }
-            }
-
-            // For StringReference, call value()
-            if (className.contains("StringReference")) {
-                try {
-                    val valueMethod = jdiClass.getMethod("value")
-                    val strValue = valueMethod.invoke(jdiValue) as? String
-                    if (strValue != null) {
-                        return "\"$strValue\""
-                    }
-                } catch (e: Exception) {
-                    log.debug("StringReference value() failed: ${e.message}")
-                }
-            }
-
-            // For ArrayReference, show length
-            if (className.contains("ArrayReference")) {
-                try {
-                    val lengthMethod = jdiClass.getMethod("length")
-                    val length = lengthMethod.invoke(jdiValue)
-                    return "{length=$length}"
-                } catch (e: Exception) {
-                    log.debug("ArrayReference length() failed: ${e.message}")
-                }
-            }
-
-            // For ObjectReference, get type name
-            if (className.contains("ObjectReference")) {
-                try {
-                    val typeMethod = jdiClass.getMethod("type")
-                    val type = typeMethod.invoke(jdiValue)
-                    if (type != null) {
-                        val nameMethod = type.javaClass.getMethod("name")
-                        val typeName = nameMethod.invoke(type) as? String
-                        if (typeName != null) {
-                            return typeName.substringAfterLast(".")
-                        }
-                    }
-                } catch (e: Exception) {
-                    log.debug("ObjectReference type() failed: ${e.message}")
-                }
-            }
-
-            // Fallback: use toString() but clean it up
-            val valueStr = jdiValue.toString()
-            if (valueStr.isNotBlank()) {
-                if (valueStr.startsWith("instance of")) {
-                    return valueStr.substringAfter("instance of ").substringBefore("(").trim()
-                }
-                return valueStr
-            }
-        } catch (e: Exception) {
-            log.debug("extractFromJdiValue failed for $className: ${e.message}")
-        }
-        return null
+    private fun isSensitiveVariableName(name: String): Boolean {
+        val lowerName = name.lowercase()
+        return SENSITIVE_NAME_PATTERNS.any { pattern -> lowerName.contains(pattern) }
     }
 
-    private fun sanitizeValue(value: String): String {
-        val lowerValue = value.lowercase()
-        if (lowerValue.contains("password") || lowerValue.contains("secret") ||
-            lowerValue.contains("token") || lowerValue.contains("api_key")) {
+    private val SENSITIVE_NAME_PATTERNS = listOf(
+        "password", "passwd", "pwd",
+        "secret", "apikey", "api_key",
+        "token", "accesstoken", "access_token",
+        "credential", "auth", "private"
+    )
+
+    /**
+     * Sanitize a variable value for display.
+     * - Masks values of sensitive variables (by name)
+     * - Truncates very long values
+     */
+    private fun sanitizeValue(name: String, value: String): String {
+        // SECURITY: Mask values of sensitive variables based on NAME, not value content
+        if (isSensitiveVariableName(name)) {
             return "***MASKED***"
         }
         return if (value.length > 500) value.take(500) + "...[truncated]" else value
+    }
+
+    /**
+     * Expand a variable by path to get its children.
+     * Path can be: "variableName", "variableName.field", "array[0]", etc.
+     */
+    fun expandVariable(path: String): ExpandedVariableResponse {
+        val session = DebugStateService.getInstance().getActiveSession()
+        if (session == null || !session.isSuspended) {
+            return ExpandedVariableResponse(path = path, children = emptyList(), error = "No suspended debug session")
+        }
+
+        val frame = session.currentStackFrame
+            ?: return ExpandedVariableResponse(path = path, children = emptyList(), error = "No current stack frame")
+
+        // Parse the path to find the target XValue
+        val pathParts = parsePath(path)
+        if (pathParts.isEmpty()) {
+            return ExpandedVariableResponse(path = path, children = emptyList(), error = "Invalid path")
+        }
+
+        // First, get all variables from the frame
+        val rootVars = mutableMapOf<String, XValue>()
+        val collectLatch = CountDownLatch(1)
+
+        frame.computeChildren(object : XCompositeNode {
+            override fun addChildren(children: XValueChildrenList, last: Boolean) {
+                for (i in 0 until children.size()) {
+                    rootVars[children.getName(i)] = children.getValue(i)
+                }
+                if (last) collectLatch.countDown()
+            }
+            override fun tooManyChildren(remaining: Int) { collectLatch.countDown() }
+            override fun setAlreadySorted(alreadySorted: Boolean) {}
+            override fun setErrorMessage(errorMessage: String) { collectLatch.countDown() }
+            override fun setErrorMessage(errorMessage: String, link: XDebuggerTreeNodeHyperlink?) { collectLatch.countDown() }
+            override fun setMessage(message: String, icon: Icon?, attributes: SimpleTextAttributes, link: XDebuggerTreeNodeHyperlink?) {}
+        })
+
+        if (!collectLatch.await(TimeoutConfig.VARIABLE_EXPAND_MS, TimeUnit.MILLISECONDS)) {
+            return ExpandedVariableResponse(path = path, children = emptyList(), error = "Timeout collecting variables")
+        }
+
+        // Navigate to the target variable
+        val targetValue = navigateToValue(rootVars, pathParts)
+            ?: return ExpandedVariableResponse(path = path, children = emptyList(), error = "Variable not found: $path")
+
+        // Get children of the target value
+        val children = getChildrenOfValue(targetValue)
+        return ExpandedVariableResponse(path = path, children = children)
+    }
+
+    /**
+     * Parse a variable path like "obj.field.subField" or "array[0].field"
+     * Returns list of path segments
+     */
+    private fun parsePath(path: String): List<String> {
+        val result = mutableListOf<String>()
+        val current = StringBuilder()
+
+        var i = 0
+        while (i < path.length) {
+            val c = path[i]
+            when {
+                c == '.' -> {
+                    if (current.isNotEmpty()) {
+                        result.add(current.toString())
+                        current.clear()
+                    }
+                }
+                c == '[' -> {
+                    if (current.isNotEmpty()) {
+                        result.add(current.toString())
+                        current.clear()
+                    }
+                    // Read until ]
+                    i++
+                    while (i < path.length && path[i] != ']') {
+                        current.append(path[i])
+                        i++
+                    }
+                    if (current.isNotEmpty()) {
+                        result.add("[${current}]")
+                        current.clear()
+                    }
+                }
+                else -> current.append(c)
+            }
+            i++
+        }
+
+        if (current.isNotEmpty()) {
+            result.add(current.toString())
+        }
+
+        return result
+    }
+
+    /**
+     * Navigate through the variable tree to find a specific value
+     */
+    private fun navigateToValue(rootVars: Map<String, XValue>, pathParts: List<String>): XValue? {
+        if (pathParts.isEmpty()) return null
+
+        var current: XValue? = rootVars[pathParts[0]]
+        if (current == null) return null
+
+        for (i in 1 until pathParts.size) {
+            val part = pathParts[i]
+            val children = getChildrenMap(current!!)
+
+            current = if (part.startsWith("[") && part.endsWith("]")) {
+                // Array index
+                val index = part.substring(1, part.length - 1)
+                children[index] ?: children["[$index]"]
+            } else {
+                children[part]
+            }
+
+            if (current == null) return null
+        }
+
+        return current
+    }
+
+    /**
+     * Get children of an XValue as a map
+     */
+    private fun getChildrenMap(value: XValue): Map<String, XValue> {
+        val children = mutableMapOf<String, XValue>()
+        val latch = CountDownLatch(1)
+
+        value.computeChildren(object : XCompositeNode {
+            override fun addChildren(list: XValueChildrenList, last: Boolean) {
+                for (i in 0 until list.size()) {
+                    children[list.getName(i)] = list.getValue(i)
+                }
+                if (last) latch.countDown()
+            }
+            override fun tooManyChildren(remaining: Int) { latch.countDown() }
+            override fun setAlreadySorted(alreadySorted: Boolean) {}
+            override fun setErrorMessage(errorMessage: String) { latch.countDown() }
+            override fun setErrorMessage(errorMessage: String, link: XDebuggerTreeNodeHyperlink?) { latch.countDown() }
+            override fun setMessage(message: String, icon: Icon?, attributes: SimpleTextAttributes, link: XDebuggerTreeNodeHyperlink?) {}
+        })
+
+        latch.await(TimeoutConfig.VARIABLE_EXPAND_MS, TimeUnit.MILLISECONDS)
+        return children
+    }
+
+    /**
+     * Get children of an XValue as a list of VariableInfo
+     */
+    private fun getChildrenOfValue(value: XValue): List<VariableInfo> {
+        val children = CopyOnWriteArrayList<VariableInfo>()
+        val childrenMap = getChildrenMap(value)
+
+        val presentationLatch = CountDownLatch(childrenMap.size)
+
+        for ((name, childValue) in childrenMap) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    val varInfo = extractPresentation(name, childValue)
+                    children.add(varInfo)
+                } finally {
+                    presentationLatch.countDown()
+                }
+            }
+        }
+
+        presentationLatch.await(TimeoutConfig.VARIABLE_PRESENTATION_MS, TimeUnit.MILLISECONDS)
+        return children.sortedBy { it.name }
     }
 }

@@ -238,6 +238,41 @@ intellij-debug-bridge/
 5. /debug/step-over advances debugger
 6. /debug/resume continues execution
 
+## Multi-Project Architecture (v2)
+
+**See: [docs/MULTI_PROJECT_ARCHITECTURE.md](docs/MULTI_PROJECT_ARCHITECTURE.md)**
+
+The plugin supports debugging multiple microservices simultaneously with:
+
+### Key Concepts
+- **Project ID**: SHA-256 hash of project base path (stable, deterministic)
+- **Session ID**: UUID generated when debug session starts
+- **No focus/context**: Every API call explicitly targets a project or session
+- **Backward compatible**: Old endpoints still work for single-project use
+
+### API Structure
+```
+GET  /projects                              # List all open projects
+GET  /sessions                              # List all debug sessions
+GET  /sessions/{sessionId}                  # Get session state
+POST /sessions/{sessionId}/step-over        # Step in specific session
+POST /projects/{projectId}/debug/start      # Start debug in project
+POST /projects/{projectId}/breakpoints      # Add breakpoint to project
+```
+
+### Architecture
+```
+AppRegistryService (Application-Level)
+├── projects: Map<projectId, ProjectStateService>
+├── sessions: Map<sessionId, SessionReference>
+└── lastTouchedSession: String?
+
+ProjectStateService (Project-Level, one per project)
+├── projectId: String
+├── sessions: Map<sessionId, XDebugSession>
+└── configurations, breakpoints, etc.
+```
+
 ## The Vision
 
 This plugin + MCP will enable:
@@ -245,5 +280,6 @@ This plugin + MCP will enable:
 - Interactive learning ("let me show you the flow")
 - Pair programming with AI that SEES what you see
 - Teaching debugging skills to millions of developers
+- **Multi-service debugging** for microservices architectures
 
 **BUILD SOMETHING LEGENDARY!**

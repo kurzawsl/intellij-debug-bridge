@@ -2,14 +2,22 @@ package com.morpheus.debugbridge
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.xdebugger.XDebugProcess
-import com.intellij.xdebugger.XDebugSession
-import com.intellij.xdebugger.XDebugSessionListener
 import com.intellij.xdebugger.XDebuggerManagerListener
+import com.morpheus.debugbridge.service.ConsoleLogService
 import com.morpheus.debugbridge.service.DebugStateService
+import com.morpheus.debugbridge.service.ProjectStateService
 
 /**
- * Listens for debug session lifecycle events (start, pause, resume, stop).
+ * Listens for debug session lifecycle events (start, stop).
  * This is registered as a project listener in plugin.xml.
+ *
+ * Responsibilities:
+ * - Notify ProjectStateService when sessions start/stop (multi-project support)
+ * - Notify DebugStateService for backward compatibility
+ * - Attach console logging to new sessions
+ *
+ * Note: Pause/resume/stackFrame events are handled by SessionEventListener
+ * which is added to each session by ProjectStateService.registerSession().
  */
 class DebugSessionListener : XDebuggerManagerListener {
 
@@ -20,13 +28,25 @@ class DebugSessionListener : XDebuggerManagerListener {
      */
     override fun processStarted(debugProcess: XDebugProcess) {
         val session = debugProcess.session
-        log.info("Debug process started: ${session.sessionName}")
+        val project = session.project
 
-        // Notify the state service
+        log.info("Debug process started: ${session.sessionName} in project ${project.name}")
+
+        // Clear previous console output and attach to new session
+        ConsoleLogService.clear()
+        ConsoleLogService.attachToSession(session)
+
+        // Register with ProjectStateService (handles multi-project tracking)
+        // This also adds session listeners for pause/resume events
+        try {
+            val projectStateService = ProjectStateService.getInstance(project)
+            projectStateService.registerSession(session)
+        } catch (e: Exception) {
+            log.warn("Failed to register session with ProjectStateService: ${e.message}")
+        }
+
+        // Notify legacy DebugStateService for backward compatibility
         DebugStateService.getInstance().onSessionStarted(session)
-
-        // Add a listener to this specific session for pause/resume events
-        session.addSessionListener(SessionEventListener(session))
     }
 
     /**
@@ -34,43 +54,19 @@ class DebugSessionListener : XDebuggerManagerListener {
      */
     override fun processStopped(debugProcess: XDebugProcess) {
         val session = debugProcess.session
-        log.info("Debug process stopped: ${session.sessionName}")
+        val project = session.project
 
+        log.info("Debug process stopped: ${session.sessionName} in project ${project.name}")
+
+        // Unregister from ProjectStateService
+        try {
+            val projectStateService = ProjectStateService.getInstance(project)
+            projectStateService.unregisterSession(session)
+        } catch (e: Exception) {
+            log.warn("Failed to unregister session from ProjectStateService: ${e.message}")
+        }
+
+        // Notify legacy DebugStateService
         DebugStateService.getInstance().onSessionStopped(session)
-    }
-
-    /**
-     * Inner listener for individual session events (pause, resume, etc.)
-     */
-    private inner class SessionEventListener(
-        private val session: XDebugSession
-    ) : XDebugSessionListener {
-
-        override fun sessionPaused() {
-            log.info("Session paused: ${session.sessionName}")
-            DebugStateService.getInstance().onSessionPaused(session)
-        }
-
-        override fun sessionResumed() {
-            log.info("Session resumed: ${session.sessionName}")
-            DebugStateService.getInstance().onSessionResumed(session)
-        }
-
-        override fun sessionStopped() {
-            log.info("Session stopped (from listener): ${session.sessionName}")
-            // Already handled by processStopped, but good to have
-        }
-
-        override fun stackFrameChanged() {
-            log.debug("Stack frame changed in: ${session.sessionName}")
-            // Update state when user selects different frame
-            if (session.isSuspended) {
-                DebugStateService.getInstance().onSessionPaused(session)
-            }
-        }
-
-        override fun beforeSessionResume() {
-            log.debug("About to resume: ${session.sessionName}")
-        }
     }
 }

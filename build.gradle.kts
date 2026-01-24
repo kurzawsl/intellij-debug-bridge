@@ -1,8 +1,8 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.9.22"
-    id("org.jetbrains.intellij") version "1.17.2"
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
+    id("org.jetbrains.kotlin.jvm") version "2.1.0"
+    id("org.jetbrains.intellij.platform") version "2.2.1"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0"
 }
 
 group = "com.morpheus.debugbridge"
@@ -10,9 +10,19 @@ version = "1.0.0"
 
 repositories {
     mavenCentral()
+    intellijPlatform {
+        defaultRepositories()
+    }
 }
 
 dependencies {
+    // IntelliJ Platform
+    intellijPlatform {
+        intellijIdeaCommunity("2024.3")
+        bundledPlugin("com.intellij.java")
+        bundledPlugin("JUnit")  // For JUnit run configurations
+    }
+
     // Ktor for embedded HTTP server
     implementation("io.ktor:ktor-server-core:2.3.7")
     implementation("io.ktor:ktor-server-netty:2.3.7")
@@ -21,47 +31,65 @@ dependencies {
     implementation("io.ktor:ktor-server-cors:2.3.7")
 
     // Kotlin serialization for JSON
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    // Note: Coroutines are provided by IntelliJ Platform, do not add explicitly
+
+    // ===== TEST DEPENDENCIES =====
+    // JUnit 5
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // MockK for Kotlin mocking
+    testImplementation("io.mockk:mockk:1.13.8")
+
+    // Ktor test client
+    testImplementation("io.ktor:ktor-server-test-host:2.3.7")
+    testImplementation("io.ktor:ktor-client-content-negotiation:2.3.7")
+
+    // Coroutines test
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+
+    // AssertJ for fluent assertions
+    testImplementation("org.assertj:assertj-core:3.24.2")
 }
 
-// Configure Gradle IntelliJ Plugin
-intellij {
-    version.set("2024.3")  // Latest stable
-    type.set("IC") // IntelliJ IDEA Community Edition
+// Configure Kotlin
+kotlin {
+    jvmToolchain(21)
+}
 
-    // Required plugins for debugging support
-    plugins.set(listOf(
-        "com.intellij.java"  // Java debugging support
-    ))
+// Configure IntelliJ Platform Plugin
+intellijPlatform {
+    pluginConfiguration {
+        name = "Debug Bridge for AI"
+        version = project.version.toString()
+
+        ideaVersion {
+            sinceBuild = "243"
+            untilBuild = "253.*"
+        }
+    }
+
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
+    }
 }
 
 tasks {
-    // Set JVM compatibility
-    withType<JavaCompile> {
-        sourceCompatibility = "17"
-        targetCompatibility = "17"
-    }
-
-    withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-        kotlinOptions.jvmTarget = "17"
-    }
-
-    patchPluginXml {
-        sinceBuild.set("243")
-        untilBuild.set("251.*")
-    }
-
-    signPlugin {
-        certificateChain.set(System.getenv("CERTIFICATE_CHAIN"))
-        privateKey.set(System.getenv("PRIVATE_KEY"))
-        password.set(System.getenv("PRIVATE_KEY_PASSWORD"))
-    }
-
-    publishPlugin {
-        token.set(System.getenv("PUBLISH_TOKEN"))
+    // Configure tests to use JUnit 5
+    test {
+        useJUnitPlatform()
+        testLogging {
+            events("passed", "skipped", "failed")
+            showStandardStreams = true
+        }
     }
 
     // Make sure Ktor dependencies are included in the plugin
