@@ -176,10 +176,14 @@ data class CreateConfigRequest(
 
     // JavaScript/TypeScript specific
     val scriptName: String? = null,      // npm script name (e.g., "test", "dev")
-    val scriptPath: String? = null,      // Path to JS/TS file to run
+    val scriptPath: String? = null,      // Path to JS/TS file or shell script to run
     val testPattern: String? = null,     // Test pattern for Vitest/Jest (e.g., "*.test.ts")
     val nodeOptions: String? = null,     // Node.js options (e.g., "--inspect")
     val packageManager: String? = null,  // "npm", "yarn", "pnpm" (default: npm)
+
+    // Shell script specific
+    val scriptText: String? = null,      // Shell command to run (Script text mode)
+    val interpreterPath: String? = null, // Shell interpreter path (default: /bin/bash)
 
     // Common options
     val programArguments: String? = null,// Program arguments

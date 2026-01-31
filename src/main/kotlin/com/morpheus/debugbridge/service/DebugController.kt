@@ -1122,6 +1122,14 @@ object DebugController {
 
     /**
      * Create a shell script configuration.
+     * Supports two modes:
+     * - Script text mode (preferred): when scriptText is provided, executes command directly
+     * - Script file mode: when scriptPath is provided and looks like a file path
+     *
+     * Auto-detection for scriptPath:
+     * - Contains '/' or '\' -> Script file mode
+     * - Ends with .sh/.bash/.zsh -> Script file mode
+     * - Otherwise -> Script text mode (treats as command)
      */
     private fun createShellScriptConfiguration(
         runManager: RunManager,
@@ -1136,20 +1144,44 @@ object DebugController {
             val settings = runManager.createConfiguration(request.name, factory)
             val configuration = settings.configuration
 
-            // Set script path
-            setPropertyViaReflection(configuration, "scriptPath", request.scriptPath ?: "")
+            // Determine mode: explicit scriptText takes precedence
+            val useScriptTextMode = if (!request.scriptText.isNullOrBlank()) {
+                true
+            } else if (!request.scriptPath.isNullOrBlank()) {
+                // Auto-detect based on scriptPath content
+                val path = request.scriptPath
+                !(path.contains("/") || path.contains("\\") ||
+                  path.endsWith(".sh") || path.endsWith(".bash") || path.endsWith(".zsh"))
+            } else {
+                // No script provided - default to text mode with empty command
+                true
+            }
+
+            if (useScriptTextMode) {
+                // Script text mode - execute command directly
+                val command = request.scriptText ?: request.scriptPath ?: ""
+                setPropertyViaReflection(configuration, "scriptText", command)
+                setPropertyViaReflection(configuration, "executeScriptFile", false)
+            } else {
+                // Script file mode - execute script file
+                setPropertyViaReflection(configuration, "scriptPath", request.scriptPath ?: "")
+                setPropertyViaReflection(configuration, "executeScriptFile", true)
+
+                // Set interpreter path if provided
+                if (!request.interpreterPath.isNullOrBlank()) {
+                    setPropertyViaReflection(configuration, "interpreterPath", request.interpreterPath)
+                }
+            }
 
             // Set working directory
-            if (!request.workingDirectory.isNullOrBlank()) {
-                setPropertyViaReflection(configuration, "scriptWorkingDirectory", request.workingDirectory)
-            } else {
-                setPropertyViaReflection(configuration, "scriptWorkingDirectory", project.basePath ?: "")
-            }
+            val workDir = request.workingDirectory ?: project.basePath ?: ""
+            setPropertyViaReflection(configuration, "scriptWorkingDirectory", workDir)
 
             // Set environment variables
             setEnvVariables(configuration, request.envVariables)
 
-            log.info("Created shell script configuration: ${request.name}")
+            val modeDesc = if (useScriptTextMode) "Script text" else "Script file"
+            log.info("Created shell script configuration: ${request.name} ($modeDesc mode)")
             return settings
         } catch (e: Exception) {
             log.warn("Failed to create shell script configuration: ${e.message}")
