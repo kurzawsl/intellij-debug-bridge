@@ -2,7 +2,7 @@
 
 ## Overview
 
-The IntelliJ Debug Bridge plugin has been upgraded to V2 API with full multi-project support. The MCP server at `/path/to/intellij-debugger-mcp/` needs to be upgraded to use the new API.
+The IntelliJ Debug Bridge plugin has been upgraded to V2 API with full multi-project support. The MCP server at `<path-to>/intellij-debugger-mcp/` needs to be upgraded to use the new API.
 
 ## Current V1 API (still works for backward compatibility)
 
@@ -36,13 +36,13 @@ Response examples:
     {
       "id": "a1b2c3d4...",
       "name": "payment-service",
-      "path": "/Users/.../payment-service",
+      "path": "/Users/dev/workspace/payment-service",
       "sessionCount": 2
     },
     {
       "id": "e5f6g7h8...",
       "name": "claude-assistant",
-      "path": "/Users/.../claude-assistant",
+      "path": "/Users/dev/workspace/claude-assistant",
       "sessionCount": 1
     }
   ]
@@ -377,7 +377,7 @@ curl -X POST "http://localhost:19999/v2/projects/{projectId}/debug/start?config=
 ## Postman Collection
 
 Updated Postman collection is available at:
-`/Users/dev/workspace/intellij-debug-bridge/postman/IntelliJ_Debug_Bridge.postman_collection.json`
+`postman/IntelliJ_Debug_Bridge.postman_collection.json`
 
 Import it to test all V2 endpoints.
 

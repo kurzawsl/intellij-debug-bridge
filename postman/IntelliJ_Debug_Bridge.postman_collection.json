@@ -583,7 +583,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"name\": \"DemoApplication\",\n    \"type\": \"SPRING_BOOT\",\n    \"className\": \"com.example.demo.DemoApplication\",\n    \"activeProfiles\": \"devpay\",\n    \"awsProfile\": \"my-aws-profile\",\n    \"awsRegion\": \"eu-west-2\",\n    \"vmOptions\": \"-Xmx1g\"\n}"
+							"raw": "{\n    \"name\": \"DemoApplication\",\n    \"type\": \"SPRING_BOOT\",\n    \"className\": \"com.example.demo.DemoApplication\",\n    \"activeProfiles\": \"dev\",\n    \"awsProfile\": \"my-aws-profile\",\n    \"awsRegion\": \"eu-central-1\",\n    \"vmOptions\": \"-Xmx1g\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/debug/configurations",

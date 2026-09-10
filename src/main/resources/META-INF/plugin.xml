@@ -2,7 +2,7 @@
     <id>com.morpheus.debug-bridge</id>
     <name>Debug Bridge for AI</name>
     <version>2.0.0</version>
-    <vendor email="support@morpheus.com" url="https://github.com/morpheus">Morpheus</vendor>
+    <vendor url="https://github.com/kurzawsl">Lukasz Kurzawski</vendor>
 
     <description>
     Bridges IntelliJ debugger to AI assistants via REST API on localhost:19999.
@@ -19,7 +19,7 @@
     1.0.0 - Initial release with REST API for debug inspection and control.
     </change-notes>
 
-    <idea-version since-build="243" until-build="253.*"/>
+    <idea-version since-build="243" until-build="262.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>

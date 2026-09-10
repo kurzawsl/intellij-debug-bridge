@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.morpheus.debugbridge"
-version = "1.0.0"
+version = "2.0.0"
 
 repositories {
     mavenCentral()
@@ -18,7 +18,10 @@ repositories {
 dependencies {
     // IntelliJ Platform
     intellijPlatform {
-        intellijIdeaCommunity("2024.3")
+        // Build against a locally installed IDE with -PlocalIdePath=/path/to/idea,
+        // otherwise against IntelliJ IDEA Community 2024.3 from the JetBrains repository.
+        val localIdePath = providers.gradleProperty("localIdePath").orNull
+        if (localIdePath != null) local(localIdePath) else intellijIdeaCommunity("2024.3")
         bundledPlugin("com.intellij.java")
         bundledPlugin("JUnit")  // For JUnit run configurations
     }
@@ -67,7 +70,7 @@ intellijPlatform {
 
         ideaVersion {
             sinceBuild = "243"
-            untilBuild = "253.*"
+            untilBuild = "262.*"
         }
     }
 
