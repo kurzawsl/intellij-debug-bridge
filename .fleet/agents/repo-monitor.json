@@ -1,0 +1,15 @@
+{
+  "schema": "fleet/agent-charter/v1",
+  "short": "repo-monitor",
+  "role": "repo-monitor",
+  "engine": "claude",
+  "model": "claude-sonnet-5",
+  "mcp": [],
+  "add_dirs": [],
+  "reports_to": "lukasz",
+  "artifacts": [
+    "digest.md"
+  ],
+  "heartbeat": "1d",
+  "budget_usd_week": 5
+}

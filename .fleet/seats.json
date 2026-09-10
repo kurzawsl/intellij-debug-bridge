@@ -1,0 +1,67 @@
+{
+  "schema": "fleet/org-seats/v1",
+  "template": "repo-ops-v1",
+  "owner": "lukasz",
+  "seats": {
+    "repo-monitor": {
+      "kind": "agent",
+      "human": "",
+      "agent": "repo-monitor",
+      "judge_engine": "codex",
+      "trigger": "heartbeat 1d",
+      "writes": "one digest comment per day"
+    },
+    "pr-reviewer": {
+      "kind": "agent",
+      "human": "",
+      "agent": "pr-reviewer",
+      "judge_engine": "codex",
+      "trigger": "PR label stage:review",
+      "writes": "findings comment; never approves"
+    },
+    "version-updater": {
+      "kind": "agent",
+      "human": "",
+      "agent": "version-updater",
+      "judge_engine": "codex",
+      "trigger": "heartbeat 7d",
+      "writes": "one PR per bump; never merges"
+    },
+    "test-runner": {
+      "kind": "agent",
+      "human": "",
+      "agent": "test-runner",
+      "judge_engine": "codex",
+      "trigger": "task or label stage:test",
+      "writes": "result table comment"
+    }
+  },
+  "raci": {
+    "approve PR": {
+      "R": "pr-reviewer",
+      "A": "owner",
+      "C": "test-runner",
+      "I": "repo-monitor"
+    },
+    "merge": {
+      "R": "owner",
+      "A": "owner",
+      "C": "pr-reviewer",
+      "I": "repo-monitor"
+    },
+    "bump": {
+      "R": "version-updater",
+      "A": "owner",
+      "C": "test-runner",
+      "I": "pr-reviewer"
+    },
+    "escalate": {
+      "R": "repo-monitor",
+      "A": "owner",
+      "C": "",
+      "I": "pr-reviewer,version-updater,test-runner"
+    }
+  },
+  "escalation_label": "needs:human",
+  "notes": "Every seat is an agent seat whose human owner is `owner` \u2014 rename to a row of .fleet/humans.md. Approval, merge and the labels stage:plan-approved / needs:human stay human-only (framework/lib/gh.sh, framework/lib/policy-gate.sh). judge_engine differs from each seat's engine (evaluator != actor)."
+}

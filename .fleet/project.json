@@ -1,0 +1,9 @@
+{
+  "schema": "fleet/project-config/v1",
+  "name": "intellij-debug-bridge",
+  "description": "IntelliJ IDEA plugin exposing the debugger over a localhost REST API for AI assistants (Kotlin, Gradle, Ktor). Companion of intellij-debugger-mcp.",
+  "repos": [
+    "/home/lukasz/workspace/intellij-debug-bridge"
+  ],
+  "default_model": "claude-sonnet-5"
+}

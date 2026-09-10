@@ -1,0 +1,17 @@
+{
+  "schema": "fleet/agent-charter/v1",
+  "short": "test-runner",
+  "role": "test-runner",
+  "engine": "claude",
+  "model": "claude-sonnet-5",
+  "mcp": [
+    "intellij-debugger"
+  ],
+  "add_dirs": [],
+  "reports_to": "lukasz",
+  "artifacts": [
+    "test-output.log"
+  ],
+  "heartbeat": null,
+  "budget_usd_week": 5
+}

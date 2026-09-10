@@ -1,0 +1,13 @@
+{
+  "schema": "fleet/agent-charter/v1",
+  "short": "version-updater",
+  "role": "version-updater",
+  "engine": "claude",
+  "model": "claude-sonnet-5",
+  "mcp": [],
+  "add_dirs": [],
+  "reports_to": "lukasz",
+  "artifacts": [],
+  "heartbeat": "7d",
+  "budget_usd_week": 5
+}

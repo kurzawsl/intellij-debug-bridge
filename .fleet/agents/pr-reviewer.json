@@ -1,0 +1,15 @@
+{
+  "schema": "fleet/agent-charter/v1",
+  "short": "pr-reviewer",
+  "role": "pr-reviewer",
+  "engine": "claude",
+  "model": "claude-sonnet-5",
+  "mcp": [],
+  "add_dirs": [],
+  "reports_to": "lukasz",
+  "artifacts": [
+    "REVIEW.md"
+  ],
+  "heartbeat": null,
+  "budget_usd_week": 5
+}
