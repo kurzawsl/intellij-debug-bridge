@@ -68,6 +68,29 @@ curl -s http://127.0.0.1:19999/v2/projects
 
 A Postman collection with every endpoint is in [`postman/`](postman/).
 
+## Testing
+
+```bash
+./gradlew test
+```
+
+The suite is plain JVM unit tests (JUnit 5 + MockK + AssertJ, Ktor test host for the REST
+layer) — no IDE instance is required. Tests live in `src/test/kotlin/com/morpheus/debugbridge/`
+and cover:
+
+- **Services**: debug state machine (`DebugStateService`), session control (`DebugController`),
+  breakpoints (`BreakpointManager`), variable extraction (`VariableExtractor`), expression
+  evaluation (`ExpressionEvaluator`), and the central project/session registry
+  (`AppRegistryService`: ID generation, registration lifecycle, indexes, last-touched tracking).
+- **API layer**: V1 route shapes (`RestServerTest`) and the V2 multi-project routes
+  (`V2RoutesTest`: discovery endpoints, session status mapping, session actions, error and
+  rate-limit responses).
+- **Models & utilities**: JSON model round-trips (`DebugModelsTest`), rate limiting
+  (`RateLimiterTest`), session listener (`DebugSessionListenerTest`).
+
+IntelliJ interfaces (`Project`, `XDebugSession`) are mocked with MockK; EDT-guarded logic is
+tested by executing `invokeLater` blocks immediately.
+
 ## API
 
 All endpoints are served from `http://127.0.0.1:19999`.
