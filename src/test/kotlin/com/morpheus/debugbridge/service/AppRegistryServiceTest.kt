@@ -475,23 +475,28 @@ class AppRegistryServiceTest {
             val pool = Executors.newFixedThreadPool(threads)
             val latch = CountDownLatch(threads)
 
-            repeat(threads) { t ->
-                pool.submit {
-                    try {
-                        repeat(iterations) { i ->
-                            val sessionId = "t$t-s$i"
-                            registry.registerSession(sessionId, "hash-a", createMockSession())
-                            registry.touchSession(sessionId)
-                            registry.unregisterSession(sessionId)
+            try {
+                val futures = (0 until threads).map { t ->
+                    pool.submit {
+                        try {
+                            repeat(iterations) { i ->
+                                val sessionId = "t$t-s$i"
+                                registry.registerSession(sessionId, "hash-a", createMockSession())
+                                registry.touchSession(sessionId)
+                                registry.unregisterSession(sessionId)
+                            }
+                        } finally {
+                            latch.countDown()
                         }
-                    } finally {
-                        latch.countDown()
                     }
                 }
-            }
 
-            assertThat(latch.await(30, TimeUnit.SECONDS)).isTrue()
-            pool.shutdownNow()
+                assertThat(latch.await(30, TimeUnit.SECONDS)).isTrue()
+                // get() rethrows worker exceptions; discarded futures would hide them
+                futures.forEach { it.get(30, TimeUnit.SECONDS) }
+            } finally {
+                pool.shutdownNow()
+            }
 
             // All sessions were unregistered; registry must be consistent
             assertThat(registry.hasActiveSessions()).isFalse()
