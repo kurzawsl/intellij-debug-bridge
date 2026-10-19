@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.1.0"
@@ -24,6 +26,7 @@ dependencies {
         if (localIdePath != null) local(localIdePath) else intellijIdeaCommunity("2024.3")
         bundledPlugin("com.intellij.java")
         bundledPlugin("JUnit")  // For JUnit run configurations
+        pluginVerifier()
     }
 
     // Ktor for embedded HTTP server
@@ -71,6 +74,13 @@ intellijPlatform {
         ideaVersion {
             sinceBuild = "243"
             untilBuild = "262.*"
+        }
+    }
+
+    // ./gradlew verifyPlugin — checks binary compatibility against the IDE the build targets
+    pluginVerification {
+        ides {
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.3")
         }
     }
 

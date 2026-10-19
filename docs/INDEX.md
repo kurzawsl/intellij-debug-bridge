@@ -14,4 +14,4 @@ Read this first. One line per document: what it is and when to open it.
 | `DEBUGGING_GUIDE.md` | how to debug the plugin itself (sandbox IDE, logs, tests) | when a change cannot be verified by unit tests |
 | `MCP_UPGRADE_PROMPT.md` | how the MCP client was upgraded to the V2 API — historical | changing the V1/V2 contract |
 | `postman/` | Postman collection + local env covering every endpoint | manual endpoint checks |
-| `.github/workflows/ci.yml` | CI: build + test on push/PR | CI red, or adding a check |
+| `.github/workflows/ci.yml` | CI: build, test, plugin verifier on push/PR | CI red, or adding a check |

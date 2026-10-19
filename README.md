@@ -125,6 +125,19 @@ src/main/kotlin/com/morpheus/debugbridge/
 └── util/                      # input validation, rate limiting
 ```
 
+## CI
+
+[![CI](https://github.com/kurzawsl/intellij-debug-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/kurzawsl/intellij-debug-bridge/actions/workflows/ci.yml)
+
+`.github/workflows/ci.yml` runs on every push to `master` and on every pull request
+(ubuntu-latest, Temurin JDK 21, Gradle cache via `gradle/actions/setup-gradle`):
+
+1. `./gradlew build -x test` — compile and package the plugin zip
+2. `./gradlew test` — unit tests (JUnit 5 + MockK)
+3. `./gradlew verifyPlugin` — IntelliJ Plugin Verifier against IntelliJ IDEA Community 2024.3
+
+The plugin zip is uploaded as an artifact; on failure the HTML test report is uploaded too.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
