@@ -15,8 +15,18 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build and test
-        run: ./gradlew build test --no-daemon
+      - name: Build
+        run: ./gradlew build -x test --no-daemon
+      - name: Test
+        run: ./gradlew test --no-daemon
+      - name: Plugin verifier
+        run: ./gradlew verifyPlugin --no-daemon
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test/
       - name: Upload plugin zip
         uses: actions/upload-artifact@v4
         with:
