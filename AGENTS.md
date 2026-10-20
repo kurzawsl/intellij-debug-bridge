@@ -14,7 +14,10 @@ It is read natively by Claude Code (via CLAUDE.md), Codex, Kimi and others.
 
 ## Build / test / run
 
-- Toolchain: JDK 21, Gradle wrapper 9.7.1, Kotlin 2.4.20, IntelliJ Platform Gradle Plugin 2.18.1.
+- Toolchain: JDK 21, Gradle wrapper 8.5, Kotlin 2.1.0, IntelliJ Platform Gradle Plugin 2.2.1.
+  Sources of truth: JDK in `jvmToolchain(21)` in build.gradle.kts and `.github/workflows/ci.yml`;
+  wrapper version in `gradle/wrapper/gradle-wrapper.properties`;
+  plugin versions in the `plugins` block of build.gradle.kts. Update this line when those change.
 - Build plugin zip: `./gradlew buildPlugin` → `build/distributions/intellij-debug-bridge-<version>.zip`
 - Test: `./gradlew test` (JUnit 5 + MockK; 144 tests, all must pass — a red test is a `task fail`, never "flaky")
 - Build against the locally installed IDE instead of downloading one: `./gradlew buildPlugin -PlocalIdePath=/opt/intellij-idea-ultimate-edition`
